@@ -28,6 +28,7 @@ use core::mem;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::task::{Context, Poll};
+use core::mem::MaybeUninit;
 
 #[cfg(feature = "integrated-timers")]
 use embassy_time_driver::AlarmHandle;
@@ -250,6 +251,7 @@ impl<F: Future + 'static> AvailableTask<F> {
 /// Raw storage that can hold up to N tasks of the same type.
 ///
 /// This is essentially a `[TaskStorage<F>; N]`.
+#[repr(transparent)]
 pub struct TaskPool<F: Future + 'static, const N: usize> {
     pool: [TaskStorage<F>; N],
 }
@@ -260,6 +262,23 @@ impl<F: Future + 'static, const N: usize> TaskPool<F, N> {
         Self {
             pool: [TaskStorage::NEW; N],
         }
+    }
+
+    /// Construct a TaskStorage in place.
+    /// 
+    /// Used with Arena::alloc to lower stack usage when creating a TaskPool
+    pub fn new_in_place(uninit: &mut MaybeUninit<Self>) -> &mut Self {
+        let mut ptr = uninit.as_mut_ptr() as *mut MaybeUninit<TaskStorage<F>>;
+        for _ in 0..N {
+            // Safety: TaskPool has a transparent memory representation as a TaskStorage<F> array.
+            // Safety: offset is traversing an allocated region of memory
+            unsafe { 
+                (*ptr).write(TaskStorage::NEW); 
+                ptr = ptr.offset(1);
+            }
+        }
+        // Safety. All elements have been initialized
+        unsafe { uninit.assume_init_mut() }
     }
 
     fn spawn_impl<T>(&'static self, future: impl FnOnce() -> F) -> SpawnToken<T> {

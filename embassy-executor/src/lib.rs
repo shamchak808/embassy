@@ -130,8 +130,8 @@ pub mod _export {
             critical_section::with(|cs| {
                 let ptr = self.ptr.borrow(cs);
                 if ptr.get().is_null() {
-                    let pool = ARENA.alloc::<TaskPool<F, N>>(cs);
-                    pool.write(TaskPool::new());
+                    let mut pool = ARENA.alloc::<TaskPool<F, N>>(cs);
+                    TaskPool::new_in_place(&mut pool);
                     ptr.set(pool as *mut _ as _);
                 }
 
